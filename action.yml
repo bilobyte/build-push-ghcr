@@ -1,0 +1,103 @@
+name: Build and push GHCR image
+description: Build a Docker image, publish it to GHCR, and return an immutable digest reference.
+
+inputs:
+  token:
+    description: GitHub token with packages:write permission.
+    required: true
+  context:
+    description: Docker build context.
+    required: false
+    default: "."
+  file:
+    description: Dockerfile path. Defaults to the Dockerfile in the build context.
+    required: false
+    default: ""
+  image:
+    description: Untagged ghcr.io image repository. Defaults to ghcr.io/<owner>/<repository>.
+    required: false
+    default: ""
+  platforms:
+    description: Optional comma-separated target platforms.
+    required: false
+    default: ""
+  build-args:
+    description: Optional newline-separated Docker build arguments.
+    required: false
+    default: ""
+  secret-files:
+    description: Optional newline-separated BuildKit secret file mappings.
+    required: false
+    default: ""
+
+outputs:
+  repository:
+    description: Normalized GHCR image repository without a tag or digest.
+    value: ${{ steps.image.outputs.repository }}
+  digest:
+    description: Digest produced by the Docker build.
+    value: ${{ steps.build.outputs.digest }}
+  image:
+    description: Immutable image reference in repository@digest form.
+    value: ${{ steps.reference.outputs.image }}
+  sha-tag:
+    description: Image reference tagged with the full Git commit SHA.
+    value: ${{ steps.image.outputs.sha-tag }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve image repository
+      id: image
+      shell: bash
+      env:
+        BUILD_PUSH_GHCR_ACTION_PATH: ${{ github.action_path }}
+        BUILD_PUSH_GHCR_IMAGE: ${{ inputs.image }}
+      run: '"${BUILD_PUSH_GHCR_ACTION_PATH}/src/resolve-image.sh"'
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c
+
+    - name: Log in to GitHub Container Registry
+      uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ inputs.token }}
+
+    - name: Extract Docker metadata
+      id: metadata
+      uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302
+      with:
+        images: ${{ steps.image.outputs.repository }}
+        tags: |
+          type=ref,event=branch
+          type=sha,format=long
+
+    - name: Build and push Docker image
+      id: build
+      uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
+      with:
+        context: ${{ inputs.context }}
+        file: ${{ inputs.file }}
+        platforms: ${{ inputs.platforms }}
+        push: true
+        tags: ${{ steps.metadata.outputs.tags }}
+        labels: ${{ steps.metadata.outputs.labels }}
+        build-args: ${{ inputs.build-args }}
+        secret-files: ${{ inputs.secret-files }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Create immutable image reference
+      id: reference
+      shell: bash
+      env:
+        BUILD_PUSH_GHCR_ACTION_PATH: ${{ github.action_path }}
+        BUILD_PUSH_GHCR_REPOSITORY: ${{ steps.image.outputs.repository }}
+        BUILD_PUSH_GHCR_DIGEST: ${{ steps.build.outputs.digest }}
+      run: '"${BUILD_PUSH_GHCR_ACTION_PATH}/src/write-reference.sh"'
+
+branding:
+  icon: package
+  color: blue

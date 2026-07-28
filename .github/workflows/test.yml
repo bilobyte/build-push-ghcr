@@ -1,0 +1,43 @@
+name: Test
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  shell-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+
+      - name: Run contract tests
+        run: ./tests/test.sh
+
+  hosted-smoke-test:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+
+      - name: Build and push fixture
+        id: image
+        uses: ./
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          context: ./tests/fixture
+
+      - name: Verify published image
+        shell: bash
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+        run: docker buildx imagetools inspect "$IMAGE"
