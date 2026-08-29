@@ -21,10 +21,6 @@ steps:
     uses: bilobyte/build-push-ghcr@v1
     with:
       token: ${{ secrets.GITHUB_TOKEN }}
-      build-args: |
-        DEPLOYMENT_ID=${{ github.sha }}
-      secret-files: |
-        next_server_actions_encryption_key=.next-actions-key.generated
 
   - name: Use immutable image
     env:
